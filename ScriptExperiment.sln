@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.27004.2010
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScriptExperiment.ConsoleApp", "ScriptExperiment.ConsoleApp\ScriptExperiment.ConsoleApp.csproj", "{F8F98ECC-1BB4-4204-AEEB-15F82D6C7F8C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScriptExperiment.Loader", "ScriptExperiment.Loader\ScriptExperiment.Loader.csproj", "{CFC65B55-D8D3-46A2-93DD-BD61B929A258}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F8F98ECC-1BB4-4204-AEEB-15F82D6C7F8C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F8F98ECC-1BB4-4204-AEEB-15F82D6C7F8C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F8F98ECC-1BB4-4204-AEEB-15F82D6C7F8C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F8F98ECC-1BB4-4204-AEEB-15F82D6C7F8C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CFC65B55-D8D3-46A2-93DD-BD61B929A258}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CFC65B55-D8D3-46A2-93DD-BD61B929A258}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CFC65B55-D8D3-46A2-93DD-BD61B929A258}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CFC65B55-D8D3-46A2-93DD-BD61B929A258}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {BDF46007-372A-4700-AD33-14C06B64F1F6}
+	EndGlobalSection
+EndGlobal
