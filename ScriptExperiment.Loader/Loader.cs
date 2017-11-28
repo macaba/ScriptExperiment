@@ -24,6 +24,7 @@ namespace ScriptExperiment.Loader
         public Type Type { get; set; }
         public object Instance { get; set; }
         public DateTime LastCompilationTime { get; set; }
+        public bool AbortProcessing { get; set; }
     }
 
     public sealed class ScriptLoader
@@ -76,11 +77,11 @@ namespace ScriptExperiment.Loader
         {
             if (lastCompilationRequestTimes.ContainsKey(e.FullPath))
             {
-                if(lastCompilationRequestTimes[e.FullPath].AddSeconds(1) < DateTime.UtcNow)
+                if (lastCompilationRequestTimes[e.FullPath].AddSeconds(1) < DateTime.UtcNow)
                 {
                     filesToCompile.Add(e.FullPath);
                     lastCompilationRequestTimes[e.FullPath] = DateTime.UtcNow;
-                }                  
+                }
             }
             else
             {
@@ -135,91 +136,117 @@ namespace ScriptExperiment.Loader
                 {
                     Script script = new Script
                     {
-                        FilePath = filePath
+                        FilePath = filePath,
+                        AbortProcessing = false
                     };
 
                     Console.WriteLine("Reading file");
-                    var fileStream = WaitForFile(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);      //FileSystemWatcher doesn't wait for the file handle to be released!
-                    string fileContents;
-                    using (var sr = new StreamReader(fileStream))
-                    {
-                        fileContents = sr.ReadToEnd();
-                    }
-                    fileStream.Dispose();
+                    string fileContents = ReadFile(script);
                     Console.WriteLine("Parse syntax");
-                    SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(fileContents);
+                    var syntaxTree = LoadSyntax(fileContents, script);
 
-                    var root = (CompilationUnitSyntax)syntaxTree.GetRoot();
-                    var collector = new ClassCollector();
-                    collector.Visit(root);
-                    if (collector.Classes.Count == 0)
+                    if (!script.AbortProcessing)
                     {
-                        Console.Error.WriteLine("No class found in script");
-                        return;
-                    }
-                    if (collector.Classes.Count > 1)
-                    {
-                        Console.Error.WriteLine("Only 1 class allowed in script");
-                        return;
-                    }
-
-                    script.ClassName = collector.Classes[0].Split('.').Last();      //Replace this with something better later... we already know the proper class name inside ClassCollector. Use it.
-                    script.FullClassName = collector.Classes[0];
-
-                    string assemblyName = Path.GetRandomFileName();
-                    MetadataReference[] references = new MetadataReference[]
-                    {
-                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(Enumerable).Assembly.Location)
-                    };
-
-                    CSharpCompilation compilation = CSharpCompilation.Create(
-                        assemblyName,
-                        syntaxTrees: new[] { syntaxTree },
-                        references: references,
-                        options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-                    using (var ms = new MemoryStream())
-                    {
-                        Console.WriteLine("Compiling...");
-                        Stopwatch stopWatch = new Stopwatch();
-                        stopWatch.Start();
-                        EmitResult result = compilation.Emit(ms);
-                        stopWatch.Stop();
-                        Console.WriteLine("Compile complete. (" + stopWatch.ElapsedMilliseconds + "ms)");
-                        script.LastCompilationTime = DateTime.UtcNow;
-                        if (!result.Success)
+                        using (var ms = new MemoryStream())
                         {
-                            IEnumerable<Diagnostic> failures = result.Diagnostics.Where(diagnostic =>
-                                diagnostic.IsWarningAsError ||
-                                diagnostic.Severity == DiagnosticSeverity.Error);
-
-                            foreach (Diagnostic diagnostic in failures)
-                            {
-                                Console.Error.WriteLine("{0}: {1}", diagnostic.Id, diagnostic.GetMessage());
-                            }
-                        }
-                        else
-                        {
-                            Console.WriteLine("Loading assembly...");
-                            ms.Seek(0, SeekOrigin.Begin);
-                            Assembly assembly = Assembly.Load(ms.ToArray());
-                            script.Assembly = assembly;
-                            Console.WriteLine("Assembly loaded.");
-
-                            Console.WriteLine("Activating " + script.FullClassName + "...");
-                            Type type = assembly.GetType(script.FullClassName);
-                            script.Type = type;
-                            object obj = Activator.CreateInstance(type);
-                            script.Instance = obj;
-                            Console.WriteLine("Activated.");
-
-                            scripts.RemoveAll(s => s.FullClassName == script.FullClassName);        //To do - add locks around this for concurrency safety
-                            scripts.Add(script);
+                            Compile(ms, syntaxTree, script);
+                            if (!script.AbortProcessing)
+                                LoadAndActivate(ms, script);
                         }
                     }
                 }
             }
+        }
+
+        private string ReadFile(Script script)
+        {
+            var fileStream = WaitForFile(script.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read);      //FileSystemWatcher doesn't wait for the file handle to be released!
+            string fileContents;
+            using (var sr = new StreamReader(fileStream))
+            {
+                fileContents = sr.ReadToEnd();
+            }
+            fileStream.Dispose();
+            return fileContents;
+        }
+
+        private SyntaxTree LoadSyntax(string fileContents, Script script)
+        {
+            SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(fileContents);
+
+            var root = (CompilationUnitSyntax)syntaxTree.GetRoot();
+            var collector = new ClassCollector();
+            collector.Visit(root);
+            if (collector.Classes.Count == 0)
+            {
+                Console.Error.WriteLine("No class found in script");
+                script.AbortProcessing = true;
+            }
+            if (collector.Classes.Count > 1)
+            {
+                Console.Error.WriteLine("Only 1 class allowed in script");
+                script.AbortProcessing = true;
+            }
+
+            script.ClassName = collector.Classes[0].Split('.').Last();      //Replace this with something better later... we already know the proper class name inside ClassCollector. Use it.
+            script.FullClassName = collector.Classes[0];
+
+            return syntaxTree;
+        }
+
+        private void Compile(MemoryStream ms, SyntaxTree syntaxTree, Script script)
+        {
+            string assemblyName = Path.GetRandomFileName();
+            MetadataReference[] references = new MetadataReference[]
+            {
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(Enumerable).Assembly.Location)
+            };
+
+            CSharpCompilation compilation = CSharpCompilation.Create(
+                assemblyName,
+                syntaxTrees: new[] { syntaxTree },
+                references: references,
+                options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+            Console.WriteLine("Compiling...");
+            Stopwatch stopWatch = new Stopwatch();
+            stopWatch.Start();
+            EmitResult result = compilation.Emit(ms);
+            stopWatch.Stop();
+            Console.WriteLine("Compile complete. (" + stopWatch.ElapsedMilliseconds + "ms)");
+            script.LastCompilationTime = DateTime.UtcNow;
+            if (!result.Success)
+            {
+                script.AbortProcessing = true;
+                IEnumerable<Diagnostic> failures = result.Diagnostics.Where(diagnostic =>
+                    diagnostic.IsWarningAsError ||
+                    diagnostic.Severity == DiagnosticSeverity.Error);
+
+                foreach (Diagnostic diagnostic in failures)
+                {
+                    Console.Error.WriteLine("{0}: {1}", diagnostic.Id, diagnostic.GetMessage());
+                }
+            }
+        }
+
+        private void LoadAndActivate(MemoryStream ms, Script script)
+        {
+            Console.WriteLine("Loading assembly...");
+            ms.Seek(0, SeekOrigin.Begin);
+            Assembly assembly = Assembly.Load(ms.ToArray());
+            script.Assembly = assembly;
+            Console.WriteLine("Assembly loaded.");
+
+            Console.WriteLine("Activating " + script.FullClassName + "...");
+            Type type = assembly.GetType(script.FullClassName);
+            script.Type = type;
+            object obj = Activator.CreateInstance(type);
+            script.Instance = obj;
+            Console.WriteLine("Activated.");
+
+            scripts.RemoveAll(s => s.FullClassName == script.FullClassName);        //To do - add locks around this for concurrency safety
+            scripts.Add(script);
         }
     }
 }
